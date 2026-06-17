@@ -5,6 +5,7 @@ CONFIG_DIR="/usr/local/etc/sing-box"
 CONFIG_FILE="$CONFIG_DIR/config.json"
 DB_FILE="$CONFIG_DIR/proxy_data.db"
 SCRIPT_PATH="/usr/local/bin/box-tool"
+GITHUB_RAW_URL="https://raw.githubusercontent.com/Vietnamvpn/singbox-linksub24h/refs/heads/main/install.sh"
 
 # Hàm lấy IP thực của VPS
 get_ip() {
@@ -24,12 +25,14 @@ install_system() {
     # Tạo thư mục cấu hình
     mkdir -p $CONFIG_DIR
     
-    # Tải Sing-box core bản mới nhất tự động qua GitHub API
+    # Tải Sing-box core bản mới nhất tự động qua GitHub API (Bắt link chuẩn 100%)
     echo "--> Đang tải Sing-box core bản mới nhất..."
-    LATEST_URL=$(curl -sL "https://api.github.com/repos/SagerNet/sing-box/releases/latest" | jq -r '.assets[] | select(.name | contains("linux-amd64") and endswith(".tar.gz")) | .browser_download_url')
-    wget -qO sing-box.tar.gz "$LATEST_URL"
+    TAG_NAME=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r .tag_name)
+    VERSION=${TAG_NAME#v}
+    wget -qO sing-box.tar.gz "https://github.com/SagerNet/sing-box/releases/download/${TAG_NAME}/sing-box-${VERSION}-linux-amd64.tar.gz"
+    
     tar -xzf sing-box.tar.gz
-    mv sing-box-*/sing-box /usr/local/bin/
+    mv sing-box-${VERSION}-linux-amd64/sing-box /usr/local/bin/
     rm -rf sing-box.tar.gz sing-box-*
     chmod +x /usr/local/bin/sing-box
     
@@ -65,8 +68,8 @@ EOF
     systemctl daemon-reload
     systemctl enable sing-box &>/dev/null
 
-    # Tự sao chép chính mã nguồn này vào hệ thống để làm menu gọi lệnh 'box-tool'
-    cp "$0" $SCRIPT_PATH
+    # Lấy chính mã nguồn từ Github của bạn làm menu gọi lệnh 'box-tool'
+    curl -sSL "$GITHUB_RAW_URL" -o $SCRIPT_PATH
     chmod +x $SCRIPT_PATH
     
     echo "--> Cài đặt lõi thành công!"
@@ -105,7 +108,6 @@ node_wizard() {
             read -p "Nhập tên User đầu tiên cho Hy2: " hy_user </dev/tty
             read -p "Nhập mật khẩu Hy2: " hy_pass </dev/tty
             
-            # Cập nhật jq tương thích mọi phiên bản
             jq ".inbounds += [{\"type\": \"hysteria2\", \"tag\": \"hy2-$port\", \"listen\": \"::\", \"listen_port\": $port, \"users\": [{\"name\": \"$hy_user\", \"password\": \"$hy_pass\"}], \"tls\": {\"enabled\": true, \"certificate_path\": \"$CONFIG_DIR/cert.pem\", \"key_path\": \"$CONFIG_DIR/private.key\"}}]" $CONFIG_FILE > tmp.json && mv tmp.json $CONFIG_FILE
             sqlite3 $DB_FILE "INSERT INTO users (node_type, port, user_key) VALUES ('hysteria2', $port, '$hy_user:$hy_pass');"
             
@@ -116,7 +118,6 @@ node_wizard() {
             read -p "Nhập mật khẩu cho User đầu tiên của TUIC: " tuic_pass </dev/tty
             uuid=$(cat /proc/sys/kernel/random/uuid)
             
-            # Cập nhật jq tương thích mọi phiên bản
             jq ".inbounds += [{\"type\": \"tuic\", \"tag\": \"tuic-$port\", \"listen\": \"::\", \"listen_port\": $port, \"users\": [{\"uuid\": \"$uuid\", \"password\": \"$tuic_pass\"}], \"congestion_control\": \"bbr\", \"tls\": {\"enabled\": true, \"certificate_path\": \"$CONFIG_DIR/cert.pem\", \"key_path\": \"$CONFIG_DIR/private.key\", \"alpn\": [\"h3\"]}}]" $CONFIG_FILE > tmp.json && mv tmp.json $CONFIG_FILE
             sqlite3 $DB_FILE "INSERT INTO users (node_type, port, user_key) VALUES ('tuic', $port, '$uuid:$tuic_pass');"
             
@@ -294,10 +295,11 @@ main_menu() {
             echo "Thao tác thành công!" && sleep 1 ;;
         9) 
             echo "--> Đang tải bản Sing-box mới nhất..."
-            LATEST_URL=$(curl -sL "https://api.github.com/repos/SagerNet/sing-box/releases/latest" | jq -r '.assets[] | select(.name | contains("linux-amd64") and endswith(".tar.gz")) | .browser_download_url')
-            wget -qO sing-box.tar.gz "$LATEST_URL"
+            TAG_NAME=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r .tag_name)
+            VERSION=${TAG_NAME#v}
+            wget -qO sing-box.tar.gz "https://github.com/SagerNet/sing-box/releases/download/${TAG_NAME}/sing-box-${VERSION}-linux-amd64.tar.gz"
             tar -xzf sing-box.tar.gz
-            mv sing-box-*/sing-box /usr/local/bin/
+            mv sing-box-${VERSION}-linux-amd64/sing-box /usr/local/bin/
             rm -rf sing-box.tar.gz sing-box-*
             chmod +x /usr/local/bin/sing-box
             systemctl restart sing-box
