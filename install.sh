@@ -26,21 +26,21 @@ get_ip() { echo $(curl -s ifconfig.me || curl -s icanhazip.com); }
 # --- FORM NHẬP LIỆU THÔNG MINH THEO GIAO THỨC ---
 prompt_node_config() {
     local proto=$1
-    read -p "👉 Nhập Cổng (Port) chính cho Node này: " RET_PORT
+    read -p "👉 Nhập Cổng (Port) chính cho Node này: " RET_PORT </dev/tty
     
-    read -p "👉 Nhập Domain kết nối (Bỏ trống tự động dùng IP VPS): " RET_DOM
+    read -p "👉 Nhập Domain kết nối (Bỏ trống tự động dùng IP VPS): " RET_DOM </dev/tty
     if [ -z "$RET_DOM" ]; then RET_DOM=$(get_ip); fi
     
     RET_SNI=""
     RET_RANGE=""
     
     if [ "$proto" == "hysteria2" ]; then
-        read -p "👉 Nhập SNI chứng chỉ (Bỏ trống hệ thống lấy ngẫu nhiên): " RET_SNI
-        read -p "👉 Nhập Port Range (Ví dụ: 2345:2347) (Bỏ trống nếu không dùng): " RET_RANGE
+        read -p "👉 Nhập SNI chứng chỉ (Bỏ trống hệ thống lấy ngẫu nhiên): " RET_SNI </dev/tty
+        read -p "👉 Nhập Port Range (Ví dụ: 2345:2347) (Bỏ trống nếu không dùng): " RET_RANGE </dev/tty
     elif [ "$proto" == "tuic" ]; then
-        read -p "👉 Nhập SNI chứng chỉ (Bỏ trống hệ thống lấy ngẫu nhiên): " RET_SNI
+        read -p "👉 Nhập SNI chứng chỉ (Bỏ trống hệ thống lấy ngẫu nhiên): " RET_SNI </dev/tty
     elif [ "$proto" == "vless" ]; then
-        read -p "👉 Nhập SNI giả lập Reality (Bắt buộc, bỏ trống mặc định www.microsoft.com): " RET_SNI
+        read -p "👉 Nhập SNI giả lập Reality (Bắt buộc, bỏ trống mặc định www.microsoft.com): " RET_SNI </dev/tty
         if [ -z "$RET_SNI" ]; then RET_SNI="www.microsoft.com"; fi
     fi
 
