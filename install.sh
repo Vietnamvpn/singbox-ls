@@ -203,8 +203,8 @@ node_wizard_initial() {
     systemctl restart sing-box; ufw reload &>/dev/null
     echo -e "\n${GREEN}🎉 ĐÃ THIẾT LẬP XONG TOÀN BỘ NODE! Nhấn Enter để vào Menu.${NC}"
     read dummy </dev/tty
+    main_menu
 }
-
 # --- MENU 3: TÍNH NĂNG THÊM 1 NODE (KHÔNG DÙNG VÒNG LẶP) ---
 add_single_node_menu() {
     clear
