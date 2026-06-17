@@ -19,14 +19,18 @@ install_system() {
     echo "========================================="
     
     # Cập nhật và cài đặt các thư viện cần thiết
-    apt update && apt install -y curl jq wget ufw openssl sqlite3
+    apt update && apt install -y curl jq wget ufw openssl sqlite3 tar
     
     # Tạo thư mục cấu hình
     mkdir -p $CONFIG_DIR
     
-    # Tải Sing-box core bản mới nhất
-    echo "--> Đang tải Sing-box core..."
-    wget -O /usr/local/bin/sing-box https://github.com/SagerNet/sing-box/releases/latest/download/sing-box-linux-amd64
+    # Tải Sing-box core bản mới nhất tự động qua GitHub API
+    echo "--> Đang tải Sing-box core bản mới nhất..."
+    LATEST_URL=$(curl -sL "https://api.github.com/repos/SagerNet/sing-box/releases/latest" | jq -r '.assets[] | select(.name | contains("linux-amd64") and endswith(".tar.gz")) | .browser_download_url')
+    wget -qO sing-box.tar.gz "$LATEST_URL"
+    tar -xzf sing-box.tar.gz
+    mv sing-box-*/sing-box /usr/local/bin/
+    rm -rf sing-box.tar.gz sing-box-*
     chmod +x /usr/local/bin/sing-box
     
     # Khởi tạo file cấu hình JSON trống chuẩn hóa
@@ -82,9 +86,9 @@ node_wizard() {
         echo "========================================="
         echo "1. Tạo Node Hysteria2"
         echo "2. Tạo Node TUIC v5"
-        read -p "Chọn loại Node muốn tạo (1-2): " node_choice
+        read -p "Chọn loại Node muốn tạo (1-2): " node_choice </dev/tty
         
-        read -p "Nhập Cổng (Port) cho Node này: " port
+        read -p "Nhập Cổng (Port) cho Node này: " port </dev/tty
         
         # Kiểm tra trùng cổng
         port_check=$(jq "[.inbounds[] | select(.listen_port == $port)] | length" $CONFIG_FILE)
@@ -98,20 +102,22 @@ node_wizard() {
         IP=$(get_ip)
         
         if [ "$node_choice" == "1" ]; then
-            read -p "Nhập tên User đầu tiên cho Hy2: " hy_user
-            read -p "Nhập mật khẩu Hy2: " hy_pass
+            read -p "Nhập tên User đầu tiên cho Hy2: " hy_user </dev/tty
+            read -p "Nhập mật khẩu Hy2: " hy_pass </dev/tty
             
-            jq -i ".inbounds += [{\"type\": \"hysteria2\", \"tag\": \"hy2-$port\", \"listen\": \"::\", \"listen_port\": $port, \"users\": [{\"name\": \"$hy_user\", \"password\": \"$hy_pass\"}], \"tls\": {\"enabled\": true, \"certificate_path\": \"$CONFIG_DIR/cert.pem\", \"key_path\": \"$CONFIG_DIR/private.key\"}}]" $CONFIG_FILE
+            # Cập nhật jq tương thích mọi phiên bản
+            jq ".inbounds += [{\"type\": \"hysteria2\", \"tag\": \"hy2-$port\", \"listen\": \"::\", \"listen_port\": $port, \"users\": [{\"name\": \"$hy_user\", \"password\": \"$hy_pass\"}], \"tls\": {\"enabled\": true, \"certificate_path\": \"$CONFIG_DIR/cert.pem\", \"key_path\": \"$CONFIG_DIR/private.key\"}}]" $CONFIG_FILE > tmp.json && mv tmp.json $CONFIG_FILE
             sqlite3 $DB_FILE "INSERT INTO users (node_type, port, user_key) VALUES ('hysteria2', $port, '$hy_user:$hy_pass');"
             
             echo -e "\n✅ ĐÃ MỞ NODE HY2 CỔNG $port!"
             echo "🔗 Link User [$hy_user]: hysteria2://$hy_pass@$IP:$port?insecure=1&sni=bing.com#Hy2-$hy_user-$port"
             
         elif [ "$node_choice" == "2" ]; then
-            read -p "Nhập mật khẩu cho User đầu tiên của TUIC: " tuic_pass
+            read -p "Nhập mật khẩu cho User đầu tiên của TUIC: " tuic_pass </dev/tty
             uuid=$(cat /proc/sys/kernel/random/uuid)
             
-            jq -i ".inbounds += [{\"type\": \"tuic\", \"tag\": \"tuic-$port\", \"listen\": \"::\", \"listen_port\": $port, \"users\": [{\"uuid\": \"$uuid\", \"password\": \"$tuic_pass\"}], \"congestion_control\": \"bbr\", \"tls\": {\"enabled\": true, \"certificate_path\": \"$CONFIG_DIR/cert.pem\", \"key_path\": \"$CONFIG_DIR/private.key\", \"alpn\": [\"h3\"]}}]" $CONFIG_FILE
+            # Cập nhật jq tương thích mọi phiên bản
+            jq ".inbounds += [{\"type\": \"tuic\", \"tag\": \"tuic-$port\", \"listen\": \"::\", \"listen_port\": $port, \"users\": [{\"uuid\": \"$uuid\", \"password\": \"$tuic_pass\"}], \"congestion_control\": \"bbr\", \"tls\": {\"enabled\": true, \"certificate_path\": \"$CONFIG_DIR/cert.pem\", \"key_path\": \"$CONFIG_DIR/private.key\", \"alpn\": [\"h3\"]}}]" $CONFIG_FILE > tmp.json && mv tmp.json $CONFIG_FILE
             sqlite3 $DB_FILE "INSERT INTO users (node_type, port, user_key) VALUES ('tuic', $port, '$uuid:$tuic_pass');"
             
             echo -e "\n✅ ĐÃ MỞ NODE TUIC V5 CỔNG $port!"
@@ -123,7 +129,7 @@ node_wizard() {
         fi
         
         echo "========================================="
-        read -p "Bạn có muốn tiếp tục mở thêm Cổng/Node khác không? (y/n): " ext_choice
+        read -p "Bạn có muốn tiếp tục mở thêm Cổng/Node khác không? (y/n): " ext_choice </dev/tty
         if [[ "$ext_choice" != "y" && "$ext_choice" != "Y" ]]; then
             systemctl restart sing-box
             ufw reload &>/dev/null
@@ -138,7 +144,7 @@ add_user_to_node() {
     echo "========================================="
     echo "       THÊM USER VÀO NODE CÓ SẴN         "
     echo "========================================="
-    read -p "Nhập số Cổng (Port) của Node muốn thêm User: " port
+    read -p "Nhập số Cổng (Port) của Node muốn thêm User: " port </dev/tty
     
     exists=$(jq "[.inbounds[] | select(.listen_port == $port)] | length" $CONFIG_FILE)
     if [ "$exists" -eq 0 ]; then
@@ -150,15 +156,15 @@ add_user_to_node() {
     type=$(jq -r ".inbounds[] | select(.listen_port == $port) | .type" $CONFIG_FILE)
     
     if [ "$type" == "hysteria2" ]; then
-        read -p "Nhập tên User mới: " uname
-        read -p "Nhập mật khẩu mới: " upass
-        jq -i "(.inbounds[] | select(.listen_port == $port).users) += [{\"name\": \"$uname\", \"password\": \"$upass\"}]" $CONFIG_FILE
+        read -p "Nhập tên User mới: " uname </dev/tty
+        read -p "Nhập mật khẩu mới: " upass </dev/tty
+        jq "(.inbounds[] | select(.listen_port == $port).users) += [{\"name\": \"$uname\", \"password\": \"$upass\"}]" $CONFIG_FILE > tmp.json && mv tmp.json $CONFIG_FILE
         sqlite3 $DB_FILE "INSERT INTO users (node_type, port, user_key) VALUES ('hysteria2', $port, '$uname:$upass');"
         echo "✅ Thêm thành công User [$uname] vào cổng Hy2 [$port]!"
     elif [ "$type" == "tuic" ]; then
-        read -p "Nhập mật khẩu cho User mới: " upass
+        read -p "Nhập mật khẩu cho User mới: " upass </dev/tty
         uuid=$(cat /proc/sys/kernel/random/uuid)
-        jq -i "(.inbounds[] | select(.listen_port == $port).users) += [{\"uuid\": \"$uuid\", \"password\": \"$upass\"}]" $CONFIG_FILE
+        jq "(.inbounds[] | select(.listen_port == $port).users) += [{\"uuid\": \"$uuid\", \"password\": \"$upass\"}]" $CONFIG_FILE > tmp.json && mv tmp.json $CONFIG_FILE
         sqlite3 $DB_FILE "INSERT INTO users (node_type, port, user_key) VALUES ('tuic', $port, '$uuid:$upass');"
         echo "✅ Thêm thành công User mới vào cổng TUIC [$port]!"
         echo "🔑 UUID cấp phát: $uuid"
@@ -172,7 +178,7 @@ delete_user_from_node() {
     echo "========================================="
     echo "       XÓA USER KHỎI NODE CÓ SẴN         "
     echo "========================================="
-    read -p "Nhập số Cổng (Port) của Node muốn cấu hình: " port
+    read -p "Nhập số Cổng (Port) của Node muốn cấu hình: " port </dev/tty
     
     exists=$(jq "[.inbounds[] | select(.listen_port == $port)] | length" $CONFIG_FILE)
     if [ "$exists" -eq 0 ]; then
@@ -187,15 +193,15 @@ delete_user_from_node() {
     if [ "$type" == "hysteria2" ]; then
         jq -r ".inbounds[] | select(.listen_port == $port).users[].name" $CONFIG_FILE
         echo "----------------------------------------"
-        read -p "Nhập CHÍNH XÁC tên User muốn xóa: " uname
-        jq -i "(.inbounds[] | select(.listen_port == $port).users) |= map(select(.name != \"$uname\"))" $CONFIG_FILE
+        read -p "Nhập CHÍNH XÁC tên User muốn xóa: " uname </dev/tty
+        jq "(.inbounds[] | select(.listen_port == $port).users) |= map(select(.name != \"$uname\"))" $CONFIG_FILE > tmp.json && mv tmp.json $CONFIG_FILE
         sqlite3 $DB_FILE "DELETE FROM users WHERE port=$port AND user_key LIKE '$uname:%';"
         echo "✅ Đã xóa user [$uname] khỏi cổng $port!"
     elif [ "$type" == "tuic" ]; then
         jq -r ".inbounds[] | select(.listen_port == $port).users[] | \"UUID: \(.uuid) | Pass: \(.password)\"" $CONFIG_FILE
         echo "----------------------------------------"
-        read -p "Nhập CHÍNH XÁC chuỗi UUID muốn xóa: " uuid
-        jq -i "(.inbounds[] | select(.listen_port == $port).users) |= map(select(.uuid != \"$uuid\"))" $CONFIG_FILE
+        read -p "Nhập CHÍNH XÁC chuỗi UUID muốn xóa: " uuid </dev/tty
+        jq "(.inbounds[] | select(.listen_port == $port).users) |= map(select(.uuid != \"$uuid\"))" $CONFIG_FILE > tmp.json && mv tmp.json $CONFIG_FILE
         sqlite3 $DB_FILE "DELETE FROM users WHERE port=$port AND user_key LIKE '$uuid:%';"
         echo "✅ Đã xóa user có UUID [$uuid] khỏi cổng $port!"
     fi
@@ -224,7 +230,7 @@ main_menu() {
     echo " 10. Gỡ bỏ sạch sẽ hoàn toàn khỏi VPS"
     echo " 0. Thoát menu"
     echo "========================================="
-    read -p "Nhập lựa chọn của bạn: " m_choice
+    read -p "Nhập lựa chọn của bạn: " m_choice </dev/tty
     
     case $m_choice in
         1)
@@ -256,7 +262,7 @@ main_menu() {
                 done
             done
             echo -e "\n======================================================="
-            read -p "Nhấn Enter để quay lại menu..." ;;
+            read -p "Nhấn Enter để quay lại menu... " dummy </dev/tty ;;
         2)
             clear
             echo "=========================================================="
@@ -269,8 +275,8 @@ main_menu() {
         4)
             clear
             echo "=== XÓA BỎ HOÀN TOÀN MỘT NODE ==="
-            read -p "Nhập số Cổng (Port) của node muốn xóa: " del_port
-            jq -i "del(.inbounds[] | select(.listen_port == $del_port))" $CONFIG_FILE
+            read -p "Nhập số Cổng (Port) của node muốn xóa: " del_port </dev/tty
+            jq "del(.inbounds[] | select(.listen_port == $del_port))" $CONFIG_FILE > tmp.json && mv tmp.json $CONFIG_FILE
             ufw delete allow $del_port/udp &>/dev/null
             sqlite3 $DB_FILE "DELETE FROM users WHERE port=$del_port;"
             systemctl restart sing-box
@@ -283,17 +289,21 @@ main_menu() {
             clear
             echo "1. Dừng chạy (Stop)"
             echo "2. Kích hoạt chạy (Start)"
-            read -p "Lựa chọn: " s_choice
+            read -p "Lựa chọn: " s_choice </dev/tty
             if [ "$s_choice" == "1" ]; then systemctl stop sing-box; else systemctl start sing-box; fi
             echo "Thao tác thành công!" && sleep 1 ;;
         9) 
             echo "--> Đang tải bản Sing-box mới nhất..."
-            wget -O /usr/local/bin/sing-box https://github.com/SagerNet/sing-box/releases/latest/download/sing-box-linux-amd64
+            LATEST_URL=$(curl -sL "https://api.github.com/repos/SagerNet/sing-box/releases/latest" | jq -r '.assets[] | select(.name | contains("linux-amd64") and endswith(".tar.gz")) | .browser_download_url')
+            wget -qO sing-box.tar.gz "$LATEST_URL"
+            tar -xzf sing-box.tar.gz
+            mv sing-box-*/sing-box /usr/local/bin/
+            rm -rf sing-box.tar.gz sing-box-*
             chmod +x /usr/local/bin/sing-box
             systemctl restart sing-box
             echo "Cập nhật thành công!" && sleep 2 ;;
         10)
-            read -p "Bạn có chắc chắn muốn xóa SẠCH mọi thứ khỏi VPS? (y/n): " un_confirm
+            read -p "Bạn có chắc chắn muốn xóa SẠCH mọi thứ khỏi VPS? (y/n): " un_confirm </dev/tty
             if [[ "$un_confirm" == "y" || "$un_confirm" == "Y" ]]; then
                 systemctl stop sing-box
                 systemctl disable sing-box &>/dev/null
@@ -318,7 +328,7 @@ else
     echo " 1. Đồng ý và cài đặt toàn bộ hệ thống Node"
     echo " 0. Hủy bỏ quá trình"
     echo "================================================="
-    read -p "Lựa chọn của bạn (0-1): " init_choice
+    read -p "Lựa chọn của bạn (0-1): " init_choice </dev/tty
     
     if [ "$init_choice" == "1" ]; then
         install_system
