@@ -372,6 +372,34 @@ uninstall_system() {
     fi
 }
 
+# --- HÀM CẬP NHẬT MÃ NGUỒN ---
+update_script() {
+    clear
+    echo -e "${BLUE}=========================================${NC}"
+    echo -e "${BLUE}       CẬP NHẬT MÃ NGUỒN TỪ GITHUB       ${NC}"
+    echo -e "${BLUE}=========================================${NC}"
+    echo -e "--> Đang tải file cập nhật mới nhất..."
+    
+    # Tải script mới vào file tạm
+    curl -sSL "$GITHUB_RAW_URL" -o /tmp/box-tool-update.sh
+    
+    # Kiểm tra xem tải có thành công và file có dữ liệu không
+    if [ $? -eq 0 ] && [ -s /tmp/box-tool-update.sh ]; then
+        mv /tmp/box-tool-update.sh $SCRIPT_PATH
+        chmod +x $SCRIPT_PATH
+        echo -e "${GREEN}✅ Đã cập nhật Tool thành công!${NC}"
+        echo -e "--> Đang khởi động lại giao diện mới..."
+        sleep 2
+        # Tự động thay thế tiến trình hiện tại bằng script mới
+        exec $SCRIPT_PATH
+    else
+        echo -e "${RED}❌ Cập nhật thất bại! Không thể tải file từ Github.${NC}"
+        echo -e "Vui lòng kiểm tra lại mạng hoặc link Github."
+        rm -f /tmp/box-tool-update.sh
+        sleep 3
+    fi
+}
+
 main_menu() {
     clear
     echo -e "${BLUE}=========================================${NC}"
@@ -386,10 +414,11 @@ main_menu() {
     echo -e " 5. [USER] Thêm người dùng (Đơn lẻ / Toàn bộ)"
     echo -e " 6. [USER] Xóa bỏ người dùng khỏi Node"
     echo -e "----------------------------------------"
-    echo -e " 7. [SYSTEM] 🟢 Bắt đầu (Start) Sing-box"
-    echo -e " 8. [SYSTEM] 🔴 Dừng (Stop) Sing-box"
-    echo -e " 9. [SYSTEM] 🔄 Khởi động lại (Restart)"
-    echo -e " 10.[SYSTEM] 🗑️  Gỡ cài đặt (Xóa sạch tàn dư)"
+    echo -e " 7. [SYSTEM] Bắt đầu (Start) Sing-box"
+    echo -e " 8. [SYSTEM] Dừng (Stop) Sing-box"
+    echo -e " 9. [SYSTEM] Khởi động lại (Restart)"
+    echo -e " 10.[SYSTEM] Gỡ cài đặt (Xóa sạch tàn dư)"
+    echo -e " 11.[SYSTEM] Cập nhật Tool (Từ Github)"
     echo -e "----------------------------------------"
     echo -e " 0. Thoát hệ thống"
     echo -e "${BLUE}=========================================${NC}"
@@ -420,23 +449,23 @@ main_menu() {
                 dom=$(sqlite3 $DB_FILE "SELECT domain FROM users WHERE port=$port LIMIT 1;")
                 if [ -z "$dom" ]; then dom=$(get_ip); fi
                 
-                echo -e "\n📍 CỔNG: $port [ Giao thức: ${type^^} ] | Kết nối: $dom"
+                echo -e "\n CỔNG: $port [ Giao thức: ${type^^} ] | Kết nối: $dom"
                 echo "-------------------------------------------------------"
                 for ((i=0; i<user_count; i++)); do
                     user_obj=$(echo "$inbound" | jq ".users[$i]")
                     if [ "$type" == "hysteria2" ]; then
                         name=$(echo "$user_obj" | jq -r '.name')
                         pass=$(echo "$user_obj" | jq -r '.password')
-                        echo "🚀 hysteria2://$pass@$dom:$port?insecure=1&sni=$sni#Hy2-$name-$port"
+                        echo " hysteria2://$pass@$dom:$port?insecure=1&sni=$sni#Hy2-$name-$port"
                     elif [ "$type" == "tuic" ]; then
                         uuid=$(echo "$user_obj" | jq -r '.uuid')
                         pass=$(echo "$user_obj" | jq -r '.password')
-                        echo "🛸 tuic://$uuid:$pass@$dom:$port?congestion_control=bbr&udp_relay_mode=native&alpn=h3&sni=$sni&allow_insecure=1#TUIC-${uuid:0:8}-$port"
+                        echo " tuic://$uuid:$pass@$dom:$port?congestion_control=bbr&udp_relay_mode=native&alpn=h3&sni=$sni&allow_insecure=1#TUIC-${uuid:0:8}-$port"
                     elif [ "$type" == "vless" ]; then
                         uuid=$(echo "$user_obj" | jq -r '.uuid')
                         name=$(echo "$user_obj" | jq -r '.name')
                         pub_k=$(sqlite3 $DB_FILE "SELECT user_key FROM users WHERE port=$port AND user_key LIKE '$name:%';" | cut -d':' -f3)
-                        echo "🛰️  vless://$uuid@$dom:$port?security=reality&encryption=none&pbk=$pub_k&headerType=none&fp=chrome&spx=%2F&type=grpc&sni=$sni&serviceName=vless-grpc&sid=0123456789abcdef#VLESS-Reality-$name"
+                        echo " vless://$uuid@$dom:$port?security=reality&encryption=none&pbk=$pub_k&headerType=none&fp=chrome&spx=%2F&type=grpc&sni=$sni&serviceName=vless-grpc&sid=0123456789abcdef#VLESS-Reality-$name"
                     fi
                 done
             done
@@ -477,6 +506,9 @@ main_menu() {
             ;;
         10) 
             uninstall_system 
+            ;;
+        11)
+            update_script
             ;;
         0) exit 0 ;;
         *) ;;
