@@ -370,16 +370,16 @@ main_menu() {
                     if [ "$type" == "hysteria2" ]; then
                         name=$(echo "$user_obj" | jq -r '.name')
                         pass=$(echo "$user_obj" | jq -r '.password')
-                        echo "🚀 hysteria2://$pass@$dom:$port?insecure=1&sni=$sni#Hy2-$name-$port"
+                        echo " hysteria2://$pass@$dom:$port?insecure=1&sni=$sni#Hy2-$name-$port"
                     elif [ "$type" == "tuic" ]; then
                         uuid=$(echo "$user_obj" | jq -r '.uuid')
                         pass=$(echo "$user_obj" | jq -r '.password')
-                        echo "🛸 tuic://$uuid:$pass@$dom:$port?congestion_control=bbr&udp_relay_mode=native&alpn=h3&sni=$sni&allow_insecure=1#TUIC-${uuid:0:8}-$port"
+                        echo " tuic://$uuid:$pass@$dom:$port?congestion_control=bbr&udp_relay_mode=native&alpn=h3&sni=$sni&allow_insecure=1#TUIC-${uuid:0:8}-$port"
                     elif [ "$type" == "vless" ]; then
                         uuid=$(echo "$user_obj" | jq -r '.uuid')
                         name=$(echo "$user_obj" | jq -r '.name')
                         pub_k=$(sqlite3 $DB_FILE "SELECT user_key FROM users WHERE port=$port AND user_key LIKE '$name:%';" | cut -d':' -f3)
-                        echo "🛰️  vless://$uuid@$dom:$port?security=reality&encryption=none&pbk=$pub_k&headerType=none&fp=chrome&spx=%2F&type=grpc&sni=$sni&serviceName=vless-grpc#VLESS-Reality-$name"
+                        echo " vless://$uuid@$dom:$port?security=reality&encryption=none&pbk=$pub_k&headerType=none&fp=chrome&spx=%2F&type=grpc&sni=$sni&serviceName=vless-grpc&sid=0123456789abcdef#VLESS-Reality-$name"
                     fi
                 done
             done
