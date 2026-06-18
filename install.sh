@@ -281,33 +281,55 @@ add_user_advanced() {
     echo -e "${BLUE}=========================================${NC}"
     read -p "👉 Nhập cổng Node (Để TRỐNG để thêm tự động vào TẤT CẢ các Node): " target_port </dev/tty
     
-    read -p "👤 Nhập tên User mới: " uname </dev/tty
+    read -p "👤 Nhập tên User: " uname </dev/tty
     if [ -z "$uname" ]; then
         echo -e "${RED}❌ Lỗi: Tên User không được để trống! Thao tác bị hủy.${NC}"
         sleep 2
         return
     fi
 
-    # --- KIỂM TRA TỒN TẠI ---
+    # 1. KIỂM TRA TỒN TẠI ĐỂ TRÁNH TRÙNG LẶP TRÊN CÙNG 1 NODE
     if [ -z "$target_port" ]; then
-        # Kiểm tra trên toàn bộ node
-        is_exist=$(jq -r "[.inbounds[] | select(has(\"users\")).users[] | select((.name // \"\") == \"$uname\")] | length" $CONFIG_FILE)
+        db_count=$(sqlite3 $DB_FILE "SELECT COUNT(*) FROM users WHERE user_key LIKE '$uname:%';")
+        if [ "$db_count" -gt 0 ]; then
+            echo -e "${YELLOW}⚠️ Lỗi: Người dùng '$uname' ĐÃ TỒN TẠI! Không thể thêm đồng loạt để tránh trùng lặp.${NC}"
+            sleep 2
+            return
+        fi
     else
-        # Kiểm tra trên cổng cụ thể
-        is_exist=$(jq -r "[.inbounds[] | select(.listen_port == $target_port and has(\"users\")).users[] | select((.name // \"\") == \"$uname\")] | length" $CONFIG_FILE)
+        db_count=$(sqlite3 $DB_FILE "SELECT COUNT(*) FROM users WHERE port=$target_port AND user_key LIKE '$uname:%';")
+        if [ "$db_count" -gt 0 ]; then
+            echo -e "${YELLOW}⚠️ Lỗi: Người dùng '$uname' ĐÃ CÓ MẶT ở Node cổng $target_port! Thao tác bị hủy.${NC}"
+            sleep 2
+            return
+        fi
     fi
 
-    if [ "$is_exist" -gt 0 ]; then
-        echo -e "${YELLOW}⚠️ Thông báo: Người dùng '${uname}' ĐÃ TỒN TẠI trong hệ thống! Thao tác bị hủy.${NC}"
-        sleep 2
-        return
+    # 2. ĐỒNG BỘ UUID & PASSWORD ĐỂ GỘP CHUNG VÀO "DANH SÁCH USER CŨ" (Thay vì tạo mới)
+    existing_pass=$(sqlite3 $DB_FILE "SELECT user_key FROM users WHERE node_type='hysteria2' AND user_key LIKE '$uname:%' LIMIT 1;" | cut -d':' -f2 | tr -d '\r')
+    if [ -z "$existing_pass" ]; then
+        existing_pass=$(sqlite3 $DB_FILE "SELECT user_key FROM users WHERE node_type='tuic' AND user_key LIKE '$uname:%' LIMIT 1;" | cut -d':' -f3 | tr -d '\r')
     fi
-    # ------------------------
-
-    read -p "🔑 Nhập Mật khẩu mới: " upass </dev/tty
-    uuid_gen=$(cat /proc/sys/kernel/random/uuid)
     
-    # Tắt tạm thời tính năng thoát script khi có lỗi
+    if [ -n "$existing_pass" ]; then
+        upass=$existing_pass
+        echo -e "👉 Đã tìm thấy tên User cũ, tự động dùng lại Mật khẩu: ${GREEN}$upass${NC}"
+    else
+        read -p "🔑 Nhập Mật khẩu mới: " upass </dev/tty
+    fi
+
+    existing_uuid=$(sqlite3 $DB_FILE "SELECT user_key FROM users WHERE node_type='vless' AND user_key LIKE '$uname:%' LIMIT 1;" | cut -d':' -f2 | tr -d '\r')
+    if [ -z "$existing_uuid" ]; then
+        existing_uuid=$(sqlite3 $DB_FILE "SELECT user_key FROM users WHERE node_type='tuic' AND user_key LIKE '$uname:%' LIMIT 1;" | cut -d':' -f2 | tr -d '\r')
+    fi
+    
+    if [ -n "$existing_uuid" ]; then
+        uuid_gen=$existing_uuid
+        echo -e "👉 Đã tìm thấy tên User cũ, tự động đồng bộ UUID: ${GREEN}$uuid_gen${NC}"
+    else
+        uuid_gen=$(cat /proc/sys/kernel/random/uuid)
+    fi
+    
     set +e 
     
     if [ -z "$target_port" ]; then
@@ -325,7 +347,8 @@ add_user_advanced() {
                 success_count=$((success_count + 1))
             elif [ "$type" == "tuic" ]; then
                 jq "(.inbounds[] | select(.listen_port == $p).users) += [{\"uuid\": \"$uuid_gen\", \"password\": \"$upass\"}]" $CONFIG_FILE > tmp.json && mv tmp.json $CONFIG_FILE
-                sqlite3 $DB_FILE "INSERT INTO users (node_type, port, domain, user_key) VALUES ('tuic', $p, '$dom', '$uuid_gen:$upass');"
+                # Chỉnh sửa cấu trúc DB của TUIC để lưu kèm Name hỗ trợ quét danh sách
+                sqlite3 $DB_FILE "INSERT INTO users (node_type, port, domain, user_key) VALUES ('tuic', $p, '$dom', '$uname:$uuid_gen:$upass');"
                 success_count=$((success_count + 1))
             elif [ "$type" == "vless" ]; then
                 sni=$(jq -r ".inbounds[] | select(.listen_port == $p).tls.server_name" $CONFIG_FILE)
@@ -338,9 +361,9 @@ add_user_advanced() {
         done
         
         if [ "$success_count" -gt 0 ]; then
-            echo -e "${GREEN}✅ Đã thêm User [${uname}] đồng loạt vào tất cả các Node thành công!${NC}"
+            echo -e "${GREEN}✅ Đã thêm User [${uname}] vào $success_count Node thành công!${NC}"
         else
-            echo -e "${RED}❌ Lỗi: Không thể thêm User [${uname}]. Vui lòng kiểm tra lại cấu hình JSON!${NC}"
+            echo -e "${RED}❌ Lỗi cấu hình JSON, không thêm được Node nào!${NC}"
         fi
     else
         type=$(jq -r ".inbounds[] | select(.listen_port == $target_port) | .type" $CONFIG_FILE)
@@ -356,23 +379,20 @@ add_user_advanced() {
                 sqlite3 $DB_FILE "INSERT INTO users (node_type, port, domain, user_key) VALUES ('hysteria2', $target_port, '$dom', '$uname:$upass');"
             elif [ "$type" == "tuic" ]; then
                 jq "(.inbounds[] | select(.listen_port == $target_port).users) += [{\"uuid\": \"$uuid_gen\", \"password\": \"$upass\"}]" $CONFIG_FILE > tmp.json && mv tmp.json $CONFIG_FILE
-                sqlite3 $DB_FILE "INSERT INTO users (node_type, port, domain, user_key) VALUES ('tuic', $target_port, '$dom', '$uuid_gen:$upass');"
+                sqlite3 $DB_FILE "INSERT INTO users (node_type, port, domain, user_key) VALUES ('tuic', $target_port, '$dom', '$uname:$uuid_gen:$upass');"
             elif [ "$type" == "vless" ]; then
                 sni=$(jq -r ".inbounds[] | select(.listen_port == $target_port).tls.server_name" $CONFIG_FILE)
                 pub_k=$(sqlite3 $DB_FILE "SELECT user_key FROM users WHERE port=$target_port AND user_key LIKE '%:%:%:%' LIMIT 1;" | cut -d':' -f3)
                 jq "(.inbounds[] | select(.listen_port == $target_port).users) += [{\"uuid\": \"$uuid_gen\", \"name\": \"$uname\"}]" $CONFIG_FILE > tmp.json && mv tmp.json $CONFIG_FILE
                 sqlite3 $DB_FILE "INSERT INTO users (node_type, port, domain, user_key) VALUES ('vless', $target_port, '$dom', '$uname:$uuid_gen:$pub_k:$sni');"
             fi
-            echo -e "${GREEN}✅ Thêm thành công User [${uname}] mới vào cổng [$target_port]!${NC}"
+            echo -e "${GREEN}✅ Đã thêm User [${uname}] vào cổng [$target_port] thành công!${NC}"
         fi
     fi
     
-    # Bật lại bắt lỗi toàn hệ thống
     set -e 
-    
     systemctl restart sing-box; sleep 2
 }
-
 # --- HÀM GỠ CÀI ĐẶT TOÀN BỘ ---
 uninstall_system() {
     clear
