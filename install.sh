@@ -153,6 +153,49 @@ Restart=always
 WantedBy=multi-user.target
 EOF
     systemctl daemon-reload && systemctl enable sing-box &>/dev/null
+
+    echo -e "${YELLOW}--> Đang khởi tạo dịch vụ Log Webhook (Chế độ chờ)...${NC}"
+    # Tạo file script forward log tối ưu (chỉ lấy log khi có link)
+    cat << 'EOF' > /usr/local/bin/log-forwarder.sh
+#!/bin/bash
+CONF_FILE="/usr/local/etc/sing-box/php_url.conf"
+
+# Đọc URL từ file. Nếu không có file hoặc file rỗng thì ngủ đông (idling)
+if [ ! -f "$CONF_FILE" ] || [ -z "$(cat "$CONF_FILE")" ]; then
+    tail -f /dev/null
+    exit 0
+fi
+
+PHP_URL=$(cat "$CONF_FILE")
+VPS_IP=$(curl -s ifconfig.me || curl -s icanhazip.com)
+
+journalctl -u sing-box -f -n 0 | while read -r line; do
+    if [[ "$line" =~ "inbound/" && ( "$line" =~ "opened" || "$line" =~ "closed" || "$line" =~ "rejected" ) ]]; then
+        safe_log=$(echo "$line" | sed 's/"/\\"/g' | tr -d '\r\n')
+        curl -s -X POST "$PHP_URL" \
+             -H "Content-Type: application/json" \
+             -d "{\"vps_ip\":\"$VPS_IP\", \"log\":\"$safe_log\"}" &
+    fi
+done
+EOF
+    chmod +x /usr/local/bin/log-forwarder.sh
+
+    # Tạo service systemd cho log-forwarder
+    cat << 'EOF' > /etc/systemd/system/log-forwarder.service
+[Unit]
+Description=Sing-box Log Forwarder
+After=sing-box.service
+
+[Service]
+ExecStart=/usr/local/bin/log-forwarder.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    systemctl daemon-reload && systemctl enable log-forwarder &>/dev/null
+    systemctl start log-forwarder &>/dev/null
     
     echo -e "${YELLOW}--> Đang tải Menu Quản lý từ nguồn...${NC}"
     curl -sSL "$GITHUB_RAW_URL" -o $SCRIPT_PATH && chmod +x $SCRIPT_PATH
@@ -482,13 +525,15 @@ uninstall_system() {
     
     if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
         echo -e "\n${YELLOW}--> Đang dừng và gỡ bỏ Service...${NC}"
-        systemctl stop sing-box &>/dev/null
-        systemctl disable sing-box &>/dev/null
+        systemctl stop sing-box log-forwarder &>/dev/null
+        systemctl disable sing-box log-forwarder &>/dev/null
         rm -f /etc/systemd/system/sing-box.service
+        rm -f /etc/systemd/system/log-forwarder.service
         systemctl daemon-reload
         
-        echo -e "${YELLOW}--> Đang xóa Core và File cấu hình...${NC}"
+        echo -e "${YELLOW}--> Đang xóa Core, Tools và File cấu hình...${NC}"
         rm -f /usr/local/bin/sing-box
+        rm -f /usr/local/bin/log-forwarder.sh
         rm -rf /usr/local/etc/sing-box
         
         echo -e "${YELLOW}--> Đang dọn dẹp Iptables Port Range (nếu có)...${NC}"
@@ -846,6 +891,50 @@ toggle_user_status() {
     fi
 }
 
+# --- TÍNH NĂNG MỚI: CẤU HÌNH WEBHOOK PHP ---
+config_webhook() {
+    clear
+    echo -e "${BLUE}=========================================${NC}"
+    echo -e "${BLUE}    CẤU HÌNH GỬI LOG LÊN WEB (WEBHOOK)   ${NC}"
+    echo -e "${BLUE}=========================================${NC}"
+    CONF_FILE="/usr/local/etc/sing-box/php_url.conf"
+    
+    if [ -f "$CONF_FILE" ] && [ -n "$(cat "$CONF_FILE")" ]; then
+        current_url=$(cat "$CONF_FILE")
+        echo -e " URL hiện tại: ${GREEN}$current_url${NC}"
+        echo -e " Trạng thái: ${GREEN}Đang hoạt động${NC}"
+    else
+        echo -e " Trạng thái: ${YELLOW}Chưa cấu hình (Đang tắt)${NC}"
+    fi
+    echo -e "----------------------------------------"
+    echo -e " 1. Thêm / Thay đổi URL PHP nhận Log"
+    echo -e " 2. Xóa URL (Tắt tính năng gửi Log)"
+    echo -e " 0. Quay lại Menu"
+    read -p " Nhập lựa chọn (0-2): " wh_choice </dev/tty
+    
+    case $wh_choice in
+        1)
+            read -p " Nhập URL trang PHP (Bắt đầu bằng http:// hoặc https://): " new_url </dev/tty
+            if [[ "$new_url" == http* ]]; then
+                echo "$new_url" > "$CONF_FILE"
+                systemctl restart log-forwarder
+                echo -e "${GREEN} Cập nhật thành công! Mọi log mới từ bây giờ sẽ được gửi lên web.${NC}"
+            else
+                echo -e "${RED} Lỗi: URL phải bắt đầu bằng http:// hoặc https://${NC}"
+            fi
+            sleep 3
+            ;;
+        2)
+            rm -f "$CONF_FILE"
+            systemctl restart log-forwarder
+            echo -e "${GREEN} Đã xóa URL. Tính năng gửi log đã được tắt!${NC}"
+            sleep 3
+            ;;
+        0) return ;;
+        *) echo -e "${RED} Lựa chọn không hợp lệ!${NC}"; sleep 1 ;;
+    esac
+}
+
 main_menu() {
     clear
     echo -e "${BLUE}=========================================${NC}"
@@ -871,6 +960,7 @@ main_menu() {
     echo -e " 14. Gỡ cài đặt, Xóa sạch tàn dư"
     echo -e " 15. Cập nhật Tool (Từ Github)"
     echo -e " 16. Tạm khóa / Mở khóa mạng User"
+    echo -e " 17. Cấu hình Webhook"
     echo -e "----------------------------------------"
     echo -e " 0. Thoát hệ thống"
     echo -e "${BLUE}=========================================${NC}"
@@ -1023,6 +1113,7 @@ main_menu() {
             update_script
             ;;
         16) toggle_user_status ;;
+        17) config_webhook ;;
         0) exit 0 ;;
         *) ;;
     esac
