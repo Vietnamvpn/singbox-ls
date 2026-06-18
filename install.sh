@@ -345,7 +345,7 @@ add_user_advanced() {
     echo -e "${BLUE}=========================================${NC}"
     echo -e "${BLUE}         THÊM NGƯỜI DÙNG MỚI VÀO NODE    ${NC}"
     echo -e "${BLUE}=========================================${NC}"
-    read -p " Nhập cổng Node (Để TRỐNG để thêm tự động vào TẤT CẢ các Node): " target_port </dev/tty
+    read -p " Nhập cổng Node muốn thêm, để trống sẽ thêm vào tất cả các Node: " target_port </dev/tty
     
     read -p " Nhập tên User: " uname </dev/tty
     if [ -z "$uname" ]; then
