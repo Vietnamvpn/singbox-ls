@@ -904,7 +904,7 @@ main_menu() {
                     set +e 
                     
                     # Truy xuất nhanh UUID trực tiếp từ Database
-                    target_uuid=$(sqlite3 $DB_FILE "SELECT user_key FROM users WHERE user_key LIKE '$target_del:%' AND user_key LIKE '%:%:%:%' LIMIT 1;" | cut -d':' -f2 | tr -d '\r')
+                    target_uuid=$(sqlite3 $DB_FILE "SELECT user_key FROM users WHERE user_key LIKE '$target_del:%' AND node_type IN ('tuic', 'vless') LIMIT 1;" | cut -d':' -f2 | tr -d '\r')
                     
                     # Xử lý ngoại lệ nếu user chỉ tồn tại ở mỗi node Hysteria2 (không có cấu trúc UUID)
                     if [ -z "$target_uuid" ]; then target_uuid="NO_UUID_FOUND"; fi
