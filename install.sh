@@ -1082,6 +1082,14 @@ main_menu() {
             echo "          DANH SÁCH TOÀN BỘ LINK NODE CỦA BẠN          "
             echo "======================================================="
             
+            # --- TỰ ĐỘNG LẤY TÊN QUỐC GIA CỦA VPS ---
+            echo -e "--> Đang lấy thông tin quốc gia của máy chủ..."
+            # Dùng API để lấy tên quốc gia, nếu lỗi sẽ để mặc định là "VPS"
+            vps_country=$(curl -s -m 5 http://ip-api.com/json/ | jq -r '.country // "VPS"')
+            
+            # Chuyển đổi tên để tránh lỗi dấu cách trong Link URL (VD: Hong Kong -> Hong_Kong)
+            safe_country=$(echo "$vps_country" | sed 's/ /_/g')
+            
             # Lấy danh sách Username duy nhất từ cấu trúc "username:..." trong Database
             all_names=$(sqlite3 $DB_FILE "SELECT DISTINCT SUBSTR(user_key, 1, INSTR(user_key, ':') - 1) FROM users;")
             
@@ -1091,6 +1099,9 @@ main_menu() {
                 for u_name in $all_names; do
                     echo -e "\n NGƯỜI DÙNG: $u_name"
                     echo "-------------------------------------------------------"
+                    
+                    # Khởi tạo biến đếm để làm số thứ tự 01, 02...
+                    node_count=1
                     
                     # Quét toàn bộ Node mà user này sở hữu
                     sqlite3 $DB_FILE "SELECT node_type, port, domain, user_key FROM users WHERE user_key LIKE '$u_name:%';" | while read -r row; do
@@ -1105,21 +1116,28 @@ main_menu() {
                         pub_k=$(echo "$ukey" | cut -d':' -f4)
                         db_sni=$(echo "$ukey" | cut -d':' -f5)
                         
-                        # Nếu Database không lưu SNI (trường hợp Hy2, TUIC), sẽ quét nhanh từ config.json
+                        # Nếu Database không lưu SNI, quét nhanh từ config.json
                         if [ -z "$db_sni" ]; then
                             sni=$(jq -r ".inbounds[] | select(.listen_port == $port) | .tls.server_name // \"bing.com\"" $CONFIG_FILE 2>/dev/null)
                         else
                             sni=$db_sni
                         fi
                         
-                        # Xuất Link cấu hình chuẩn theo từng giao thức
+                        # --- TẠO TÊN TAG GỌN GÀNG: Hong_Kong-01 ---
+                        idx_str=$(printf "%02d" $node_count)
+                        remark_tag="${safe_country}-${idx_str}"
+                        
+                        # Xuất Link với Remark Tag mới
                         if [ "$ntype" == "hysteria2" ]; then
-                            echo " hysteria2://$upass@$dom:$port?insecure=1&sni=$sni#Hy2-$u_name"
+                            echo " hysteria2://$upass@$dom:$port?insecure=1&sni=$sni#$remark_tag"
                         elif [ "$ntype" == "tuic" ]; then
-                            echo " tuic://$uuid:$upass@$dom:$port?congestion_control=bbr&udp_relay_mode=native&alpn=h3&sni=$sni&allow_insecure=1#TUIC-$u_name"
+                            echo " tuic://$uuid:$upass@$dom:$port?congestion_control=bbr&udp_relay_mode=native&alpn=h3&sni=$sni&allow_insecure=1#$remark_tag"
                         elif [ "$ntype" == "vless" ]; then
-                            echo " vless://$uuid@$dom:$port?security=reality&encryption=none&pbk=$pub_k&headerType=none&fp=chrome&spx=%2F&type=grpc&sni=$sni&serviceName=vless-grpc&sid=0123456789abcdef#VLESS-$u_name"
+                            echo " vless://$uuid@$dom:$port?security=reality&encryption=none&pbk=$pub_k&headerType=none&fp=chrome&spx=%2F&type=grpc&sni=$sni&serviceName=vless-grpc&sid=0123456789abcdef#$remark_tag"
                         fi
+                        
+                        # Tăng số thứ tự cho Node tiếp theo
+                        node_count=$((node_count + 1))
                     done
                 done
             fi
