@@ -107,16 +107,19 @@ install_core() {
     mkdir -p $CONFIG_DIR
     
     echo -e "${YELLOW}--> Đang quét phiên bản Sing-box mới nhất từ Github...${NC}"
-    TAG_NAME=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r .tag_name)
+    # Đổi URL API sang repo của bạn
+    TAG_NAME=$(curl -s https://api.github.com/repos/Vietnamvpn/sing-box/releases/latest | jq -r .tag_name)
+    
     if [ -z "$TAG_NAME" ] || [ "$TAG_NAME" == "null" ]; then
-        echo -e "${RED} [LỖI] Không thể kết nối API Github để lấy phiên bản. Vui lòng kiểm tra lại mạng!${NC}"
+        echo -e "${RED} [LỖI] Không thể kết nối API Github repo của bạn!${NC}"
         exit 1
     fi
     VERSION=${TAG_NAME#v}
     echo -e "${GREEN}--> Tìm thấy phiên bản: ${TAG_NAME}${NC}"
     
-    echo -e "${YELLOW}--> Đang tải xuống tệp cài đặt (sing-box-${VERSION}-linux-amd64.tar.gz)...${NC}"
-    wget -qO sing-box.tar.gz "https://github.com/SagerNet/sing-box/releases/download/${TAG_NAME}/sing-box-${VERSION}-linux-amd64.tar.gz"
+    echo -e "${YELLOW}--> Đang tải xuống tệp cài đặt...${NC}"
+    # Đổi URL download sang repo của bạn
+    wget -qO sing-box.tar.gz "https://github.com/Vietnamvpn/sing-box/releases/download/${TAG_NAME}/sing-box-${VERSION}-linux-amd64.tar.gz"
     
     echo -e "${YELLOW}--> Đang giải nén và thiết lập quyền thực thi...${NC}"
     tar -xzf sing-box.tar.gz && mv sing-box-${VERSION}-linux-amd64/sing-box /usr/local/bin/
