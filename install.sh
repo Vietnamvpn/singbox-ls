@@ -679,7 +679,7 @@ create_swap() {
     sleep 3
 }
 
-# --- CẬP NHẬT CẤU HÌNH NODE PROXY (ĐÃ THÊM HỦY VÀ ĐỔI TAG) ---
+# --- CẬP NHẬT CẤU HÌNH NODE PROXY (ĐÃ THÊM HỦY, ĐỔI TAG VÀ ĐỔI SNI) ---
 update_node_config() {
     clear
     echo -e "${BLUE}=========================================${NC}"
@@ -711,12 +711,16 @@ update_node_config() {
     
     # Lấy thông tin Tag hiện tại hiển thị để người dùng dễ theo dõi
     current_tag=$(jq -r ".inbounds[] | select(.listen_port == $old_port) | .tag" $CONFIG_FILE 2>/dev/null)
+    current_sni=$(jq -r ".inbounds[] | select(.listen_port == $old_port) | .tls.server_name" $CONFIG_FILE 2>/dev/null)
+    
     echo -e " Node đang chọn có Tag hiện tại là: ${GREEN}$current_tag${NC}"
+    echo -e " SNI hiện tại đang sử dụng là: ${GREEN}$current_sni${NC}"
     echo -e "----------------------------------------"
     echo " 1. Đổi Cổng (Port) mới cho Node này"
     echo " 2. Đổi Domain/IP kết nối mới cho Node này"
     echo " 3. Đổi Tên nhận diện (Tag) mới cho Node này"
-    read -p " Chọn mục cần cập nhật (1-3): " update_choice </dev/tty
+    echo " 4. Đổi SNI (server_name) mới cho Node này"
+    read -p " Chọn mục cần cập nhật (1-4): " update_choice </dev/tty
     
     if [ -z "$update_choice" ] || [ "$update_choice" == "0" ] || [ "$update_choice" == "n" ] || [ "$update_choice" == "N" ]; then
         echo -e "${YELLOW} Đã hủy thao tác cập nhật Node.${NC}"
@@ -806,6 +810,40 @@ update_node_config() {
         systemctl restart sing-box
         echo -e "${GREEN} Cập nhật Tên Tag cho Node cổng $old_port thành [$new_tag] thành công!${NC}"
         sleep 3
+        
+    elif [ "$update_choice" == "4" ]; then
+        read -p " Nhập SNI (server_name) MỚI cho Node này: " new_sni </dev/tty
+        if [ -z "$new_sni" ] || [ "$new_sni" == "0" ] || [ "$new_sni" == "n" ] || [ "$new_sni" == "N" ]; then
+            echo -e "${YELLOW} Đã hủy thao tác.${NC}"
+            sleep 2
+            return
+        fi
+        
+        safe_new_sni=$(echo "$new_sni" | sed 's/"/\\"/g')
+        node_type=$(jq -r ".inbounds[] | select(.listen_port == $old_port) | .type" $CONFIG_FILE)
+        
+        echo -e "--> Đang cập nhật cấu hình SNI..."
+        if [ "$node_type" == "vless" ]; then
+            # VLESS cần đổi cả server_name và reality.handshake.server
+            jq "(.inbounds[] | select(.listen_port == $old_port)).tls.server_name = \"$safe_new_sni\" | (.inbounds[] | select(.listen_port == $old_port)).tls.reality.handshake.server = \"$safe_new_sni\"" $CONFIG_FILE > tmp.json && [ -s tmp.json ] && mv tmp.json $CONFIG_FILE || rm -f tmp.json
+            
+            # Đồng bộ lại SNI vào cơ sở dữ liệu để Link VLESS khi xuất ra menu 1 được chính xác
+            sqlite3 $DB_FILE "SELECT id, user_key FROM users WHERE port=$old_port AND node_type='vless';" | while read -r row; do
+                u_id=$(echo "$row" | cut -d'|' -f1)
+                u_key=$(echo "$row" | cut -d'|' -f2)
+                # Lấy 4 trường đầu của VLESS (name:uuid:pass:pub_k) và gắn SNI mới vào cuối
+                part1_4=$(echo "$u_key" | cut -d':' -f1-4)
+                sqlite3 $DB_FILE "UPDATE users SET user_key='${part1_4}:${safe_new_sni}' WHERE id=$u_id;"
+            done
+        else
+            # Hysteria2 và TUIC chỉ cần đổi tls.server_name
+            jq "(.inbounds[] | select(.listen_port == $old_port)).tls.server_name = \"$safe_new_sni\"" $CONFIG_FILE > tmp.json && [ -s tmp.json ] && mv tmp.json $CONFIG_FILE || rm -f tmp.json
+        fi
+        
+        systemctl restart sing-box
+        echo -e "${GREEN} Cập nhật SNI cho Node cổng $old_port thành [$new_sni] thành công!${NC}"
+        sleep 3
+        
     else
         echo -e "${RED} Lựa chọn sai định dạng!${NC}"
         sleep 2
