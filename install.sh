@@ -864,9 +864,18 @@ issue_cloudflare_cert() {
         echo -e "--> Đang xuất chứng chỉ vào thư mục lưu trữ lõi..."
         ~/.acme.sh/acme.sh --install-cert -d "$cf_domain" --ecc \
             --key-file "$CONFIG_DIR/private.key" \
-            --fullchain-file "$CONFIG_DIR/cert.pem" \
-            --reloadcmd "systemctl restart sing-box"
-        echo -e "${GREEN} Xin cấp chứng chỉ SSL Cloudflare thành công! Đã tự động áp dụng.${NC}"
+            --fullchain-file "$CONFIG_DIR/cert.pem"
+            
+        echo -e "--> Đang tự động cập nhật server_name và domain..."
+        # 1. Cập nhật server_name cho Hysteria2 và TUIC trong config.json (Bỏ qua VLESS Reality)
+        jq '(.inbounds[] | select(.type == "hysteria2" or .type == "tuic") | .tls.server_name) = "'$cf_domain'"' $CONFIG_FILE > tmp.json && [ -s tmp.json ] && mv tmp.json $CONFIG_FILE || rm -f tmp.json
+        
+        # 2. Đồng bộ domain mới vào Database để lúc xuất link ở Menu 1 hiển thị đúng tên miền
+        safe_cf_domain=$(echo "$cf_domain" | sed "s/'/''/g")
+        sqlite3 $DB_FILE "UPDATE users SET domain='$safe_cf_domain';"
+        
+        systemctl restart sing-box
+        echo -e "${GREEN} Xin chứng chỉ SSL Cloudflare và cập nhật cấu hình Node thành công!${NC}"
     else
         echo -e "${RED} Xin cấp chứng chỉ thất bại! Vui lòng kiểm tra lại thông tin API hoặc trạng thái DNS.${NC}"
     fi
