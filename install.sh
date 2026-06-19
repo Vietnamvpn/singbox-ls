@@ -299,7 +299,9 @@ node_wizard_initial() {
     echo -e "${PURPLE}   BƯỚC 2: KHỞI TẠO USER CHO TẤT CẢ NODE  ${NC}"
     echo -e "${PURPLE}========================================= ${NC}"
     read -p " Nhập tên Tài khoản (Username) chung: " common_name </dev/tty
-    read -p " Nhập Mật khẩu (Password) chung: " common_pass </dev/tty
+    # Tự động tạo mật khẩu ngẫu nhiên 10 ký tự (gồm chữ và số)
+    common_pass=$(tr -dc 'a-zA-Z0-9' </dev/urandom | head -c 10)
+    echo -e " Mật khẩu (Password) chung tự động tạo: ${GREEN}$common_pass${NC}"
     common_uuid=$(cat /proc/sys/kernel/random/uuid)
     
     # Xử lý làm sạch đầu vào để chống lỗi SQL Injection khi insert vào database
@@ -368,7 +370,9 @@ add_single_node_menu() {
     
     echo -e "----------------------------------------"
     read -p " Nhập Username dành riêng cho Node mới này: " uname </dev/tty
-    read -p " Nhập Password dành riêng cho Node mới này: " upass </dev/tty
+    # Tự động tạo mật khẩu ngẫu nhiên 10 ký tự
+    upass=$(tr -dc 'a-zA-Z0-9' </dev/urandom | head -c 10)
+    echo -e " Mật khẩu (Password) tự động tạo cho Node này: ${GREEN}$upass${NC}"
     uuid_gen=$(cat /proc/sys/kernel/random/uuid)
     
     port=$RET_PORT
