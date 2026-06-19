@@ -816,17 +816,26 @@ update_node_config() {
 issue_cloudflare_cert() {
     clear
     echo -e "${BLUE}=========================================${NC}"
-    echo -e "${BLUE}       XIN CHỨNG CHỈ SSL CLOUDFLARE      ${NC}"
+    echo -e "${BLUE}   XIN CHỨNG CHỈ WILDCARD SSL CLOUDFLARE ${NC}"
     echo -e "${BLUE}=========================================${NC}"
-    echo -e "Yêu cầu: Domain đã trỏ về VPS và bạn có tài khoản Cloudflare."
+    echo -e "Giải pháp: Xin chứng chỉ dạng *.tenmien.com để TẤT CẢ các node"
+    echo -e "subdomain (us1, us2, us3...) dùng chung một lần duy nhất."
+    echo -e "Yêu cầu: Tên miền quản lý bởi Cloudflare và bạn có Global API Key."
     echo -e " ${YELLOW}(Bạn có thể nhập 0 hoặc n để hủy bỏ và quay lại Menu)${NC}"
     echo -e "----------------------------------------"
     
-    read -p " Nhập Domain cần cấp SSL (Ví dụ: sub.domain.com): " cf_domain </dev/tty
+    read -p " Nhập Tên miền gốc hoặc Wildcard (Ví dụ: nodeserver.ccwu.cc): " cf_domain </dev/tty
     if [ -z "$cf_domain" ] || [ "$cf_domain" == "0" ] || [ "$cf_domain" == "n" ] || [ "$cf_domain" == "N" ]; then
         echo -e "${YELLOW} Đã hủy thao tác xin chứng chỉ SSL.${NC}"
         sleep 2
         return
+    fi
+    
+    # Tự động định dạng lại thành cấu trúc Wildcard *. nếu người dùng chỉ nhập tên miền gốc
+    if [[ "$cf_domain" != \*.* ]]; then
+        echo -e "${YELLOW}--> Tự động chuyển đổi tên miền thành định dạng Wildcard: *.$cf_domain${NC}"
+        cf_domain="*.$cf_domain"
+        sleep 1
     fi
     
     read -p " Nhập Email tài khoản Cloudflare của bạn: " cf_email </dev/tty
@@ -857,25 +866,24 @@ issue_cloudflare_cert() {
     export CF_Key="$cf_key"
     export CF_Email="$cf_email"
     
-    echo -e "--> Đang tiến hành xác thực và xin chứng chỉ từ Cloudflare..."
+    echo -e "--> Đang tiến hành xác thực DNS API và xin chứng chỉ Wildcard từ Cloudflare..."
     ~/.acme.sh/acme.sh --issue --dns dns_cf -d "$cf_domain" --keylength ec-256 --force
     
     if [ $? -eq 0 ]; then
         echo -e "--> Đang xuất chứng chỉ vào thư mục lưu trữ lõi..."
+        # Ghi đè chứng chỉ Wildcard mới vào 2 file dùng chung duy nhất của hệ thống
         ~/.acme.sh/acme.sh --install-cert -d "$cf_domain" --ecc \
             --key-file "$CONFIG_DIR/private.key" \
             --fullchain-file "$CONFIG_DIR/cert.pem"
             
-        echo -e "--> Đang tự động cập nhật server_name và domain..."
-        # 1. Cập nhật server_name cho Hysteria2 và TUIC trong config.json (Bỏ qua VLESS Reality)
-        jq '(.inbounds[] | select(.type == "hysteria2" or .type == "tuic") | .tls.server_name) = "'$cf_domain'"' $CONFIG_FILE > tmp.json && [ -s tmp.json ] && mv tmp.json $CONFIG_FILE || rm -f tmp.json
+        echo -e "--> Đang áp dụng cấu hình và khởi động lại Sing-box..."
         
-        # 2. Đồng bộ domain mới vào Database để lúc xuất link ở Menu 1 hiển thị đúng tên miền
-        safe_cf_domain=$(echo "$cf_domain" | sed "s/'/''/g")
-        sqlite3 $DB_FILE "UPDATE users SET domain='$safe_cf_domain';"
-        
+        # BẢO VỆ DỮ LIỆU: Hoàn toàn KHÔNG sửa đổi file config.json hay Database.
+        # Từng node (us1, us2...) giữ nguyên tên miền gốc của nó để xuất link chuẩn xác.
         systemctl restart sing-box
-        echo -e "${GREEN} Xin chứng chỉ SSL Cloudflare và cập nhật cấu hình Node thành công!${NC}"
+        
+        echo -e "${GREEN} Xin thành công chứng chỉ Wildcard [$cf_domain]!${NC}"
+        echo -e "${GREEN} Toàn bộ các node con (us1, us2, us3...) đã tự động được bảo mật thành công!${NC}"
     else
         echo -e "${RED} Xin cấp chứng chỉ thất bại! Vui lòng kiểm tra lại thông tin API hoặc trạng thái DNS.${NC}"
     fi
