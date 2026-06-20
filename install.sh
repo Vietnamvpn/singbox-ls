@@ -587,7 +587,7 @@ uninstall_system() {
         fi
         
         echo -e "${YELLOW}--> Đang xóa Tool Menu...${NC}"
-        rm -f /usr/local/bin/box-tool
+        rm -f /usr/local/bin/sbls
         
         echo -e "${GREEN} Đã dọn sạch toàn bộ tàn dư của Sing-box trên VPS!${NC}"
         echo -e "Script sẽ tự động thoát."
@@ -608,11 +608,11 @@ update_script() {
     echo -e "--> Đang tải file cập nhật mới nhất..."
     
     # Tải script mới vào file tạm
-    curl -sSL "$GITHUB_RAW_URL" -o /tmp/box-tool-update.sh
+    curl -sSL "$GITHUB_RAW_URL" -o /tmp/sbls-update.sh
     
     # Kiểm tra xem tải có thành công và file có dữ liệu không
-    if [ $? -eq 0 ] && [ -s /tmp/box-tool-update.sh ]; then
-        mv /tmp/box-tool-update.sh $SCRIPT_PATH
+    if [ $? -eq 0 ] && [ -s /tmp/sbls-update.sh ]; then
+        mv /tmp/sbls-update.sh $SCRIPT_PATH
         chmod +x $SCRIPT_PATH
         echo -e "${GREEN} Đã cập nhật Tool thành công!${NC}"
         echo -e "--> Đang khởi động lại giao diện mới..."
@@ -622,7 +622,7 @@ update_script() {
     else
         echo -e "${RED} Cập nhật thất bại! Không thể tải file từ Github.${NC}"
         echo -e "Vui lòng kiểm tra lại mạng hoặc link Github."
-        rm -f /tmp/box-tool-update.sh
+        rm -f /tmp/sbls-update.sh
         sleep 3
     fi
 }
